@@ -1,0 +1,19 @@
+---
+name: "Largest Files"
+guid: "d8b2e9d4-5b1a-4c7e-9c2f-2a6f0e6a2b11"
+version: "1.0.0.0"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+overview: "Find the largest movies and TV/anime series in your library"
+description: >
+  Lists the largest items per library (Movies, TV Shows, Anime, etc).
+  Movies are listed individually; TV and anime episodes are rolled up
+  into per-series totals so a show's full size across all seasons
+  shows as one entry. Includes CSV export.
+category: "General"
+owner: "Poseidon4091"
+artifacts:
+- "Jellyfin.Plugin.LargestFiles.dll"
+changelog: >
+  Initial release: largest files by library, series roll-up for
+  TV/anime, CSV export.

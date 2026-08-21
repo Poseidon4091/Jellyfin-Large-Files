@@ -1,0 +1,74 @@
+name: Release plugin
+
+on:
+  push:
+    tags:
+      - "v*.*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install jprm
+        run: pip install jprm
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin package
+        run: |
+          mkdir -p artifacts
+          jprm plugin build Jellyfin.Plugin.LargestFiles \
+            --version "${{ steps.version.outputs.version }}" \
+            --output artifacts \
+            --dotnet-configuration Release \
+            --dotnet-framework net9.0
+
+      - name: Locate zip
+        id: zip
+        run: |
+          ZIP_PATH=$(ls artifacts/*.zip)
+          echo "path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$ZIP_PATH")" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.path }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+
+      - name: Update repository manifest
+        run: |
+          jprm repo add manifest.json "${{ steps.zip.outputs.path }}" \
+            -U "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.zip.outputs.name }}"
+
+      - name: Commit manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Update manifest for ${{ github.ref_name }}"
+          git push origin HEAD:main

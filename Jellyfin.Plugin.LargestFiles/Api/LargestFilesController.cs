@@ -26,7 +26,8 @@ public class LargestFilesController : ControllerBase
     }
 
     /// <summary>
-    /// Returns the largest files, grouped by library (Movies, TV Shows, Anime, etc).
+    /// Returns the largest items, grouped by library (Movies, TV Shows, Anime, etc).
+    /// Movies are listed individually; TV/anime episodes are rolled up per series.
     /// </summary>
     /// <param name="perCategoryLimit">Max items to return per library category.</param>
     /// <param name="minSizeMb">Only include items at or above this size, in MB.</param>
@@ -54,7 +55,7 @@ public class LargestFilesController : ControllerBase
         var grouped = BuildGroups(perCategoryLimit, minSizeMb);
 
         var sb = new StringBuilder();
-        sb.AppendLine("Category,Name,SeriesName,Type,SizeBytes,SizeMB,Path");
+        sb.AppendLine("Category,Name,Type,FileCount,SizeBytes,SizeMB,Path");
 
         foreach (var group in grouped)
         {
@@ -64,8 +65,8 @@ public class LargestFilesController : ControllerBase
                 {
                     CsvEscape(group.Category),
                     CsvEscape(item.Name),
-                    CsvEscape(item.SeriesName),
                     CsvEscape(item.Type),
+                    item.FileCount.ToString(CultureInfo.InvariantCulture),
                     item.SizeBytes.ToString(CultureInfo.InvariantCulture),
                     (item.SizeBytes / 1024d / 1024d).ToString("F2", CultureInfo.InvariantCulture),
                     CsvEscape(item.Path)
@@ -89,7 +90,11 @@ public class LargestFilesController : ControllerBase
         var minBytes = (long)(minSizeMb * 1024 * 1024);
         var take = perCategoryLimit <= 0 ? 100 : perCategoryLimit;
 
-        var byCategory = new Dictionary<string, List<LargestFileDto>>(StringComparer.OrdinalIgnoreCase);
+        // Non-episode items (movies, standalone videos, etc) are listed individually.
+        var standalone = new Dictionary<string, List<LargestFileDto>>(StringComparer.OrdinalIgnoreCase);
+
+        // Episodes are rolled up per series: seriesId -> running total.
+        var seriesTotals = new Dictionary<Guid, SeriesAccumulator>();
 
         foreach (var item in items)
         {
@@ -100,27 +105,69 @@ public class LargestFilesController : ControllerBase
             }
 
             var size = GetPathSize(path);
-            if (size <= 0 || size < minBytes)
+            if (size <= 0)
             {
                 continue;
             }
 
-            var category = GetCategory(item);
+            if (item is Episode episode)
+            {
+                var seriesId = episode.SeriesId;
+                if (seriesId == Guid.Empty)
+                {
+                    // No series link (orphaned episode) - fall back to treating it standalone.
+                    AddStandalone(standalone, item, path, size);
+                    continue;
+                }
 
-            if (!byCategory.TryGetValue(category, out var list))
+                if (!seriesTotals.TryGetValue(seriesId, out var acc))
+                {
+                    var series = _libraryManager.GetItemById(seriesId);
+                    acc = new SeriesAccumulator
+                    {
+                        Name = series?.Name ?? episode.SeriesName ?? "Unknown Series",
+                        Path = series?.Path ?? GetParentDirectory(path),
+                        Category = GetCategory(series ?? episode)
+                    };
+                    seriesTotals[seriesId] = acc;
+                }
+
+                acc.SizeBytes += size;
+                acc.FileCount++;
+            }
+            else
+            {
+                AddStandalone(standalone, item, path, size);
+            }
+        }
+
+        var byCategory = new Dictionary<string, List<LargestFileDto>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var kvp in standalone)
+        {
+            byCategory[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var acc in seriesTotals.Values)
+        {
+            if (acc.SizeBytes < minBytes)
+            {
+                continue;
+            }
+
+            if (!byCategory.TryGetValue(acc.Category, out var list))
             {
                 list = new List<LargestFileDto>();
-                byCategory[category] = list;
+                byCategory[acc.Category] = list;
             }
 
             list.Add(new LargestFileDto
             {
-                Id = item.Id,
-                Name = item.Name,
-                Type = item.GetType().Name,
-                Path = path,
-                SizeBytes = size,
-                SeriesName = (item as Episode)?.SeriesName
+                Name = acc.Name,
+                Type = "Series",
+                Path = acc.Path,
+                SizeBytes = acc.SizeBytes,
+                FileCount = acc.FileCount
             });
         }
 
@@ -128,10 +175,35 @@ public class LargestFilesController : ControllerBase
             .Select(kvp => new CategoryGroupDto
             {
                 Category = kvp.Key,
-                Items = kvp.Value.OrderByDescending(i => i.SizeBytes).Take(take).ToList()
+                Items = kvp.Value
+                    .Where(i => i.SizeBytes >= minBytes)
+                    .OrderByDescending(i => i.SizeBytes)
+                    .Take(take)
+                    .ToList()
             })
+            .Where(g => g.Items.Count > 0)
             .OrderBy(g => g.Category, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private void AddStandalone(Dictionary<string, List<LargestFileDto>> standalone, BaseItem item, string path, long size)
+    {
+        var category = GetCategory(item);
+
+        if (!standalone.TryGetValue(category, out var list))
+        {
+            list = new List<LargestFileDto>();
+            standalone[category] = list;
+        }
+
+        list.Add(new LargestFileDto
+        {
+            Name = item.Name,
+            Type = item.GetType().Name,
+            Path = path,
+            SizeBytes = size,
+            FileCount = 1
+        });
     }
 
     private string GetCategory(BaseItem item)
@@ -139,6 +211,18 @@ public class LargestFilesController : ControllerBase
         var folders = _libraryManager.GetCollectionFolders(item);
         var name = folders?.FirstOrDefault()?.Name;
         return string.IsNullOrEmpty(name) ? "Other" : name;
+    }
+
+    private static string GetParentDirectory(string filePath)
+    {
+        try
+        {
+            return Path.GetDirectoryName(filePath) ?? filePath;
+        }
+        catch (ArgumentException)
+        {
+            return filePath;
+        }
     }
 
     private static string CsvEscape(string? value)
@@ -177,12 +261,23 @@ public class LargestFilesController : ControllerBase
 
         return 0;
     }
+
+    private class SeriesAccumulator
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public string Path { get; set; } = string.Empty;
+
+        public string Category { get; set; } = string.Empty;
+
+        public long SizeBytes { get; set; }
+
+        public int FileCount { get; set; }
+    }
 }
 
 public class LargestFileDto
 {
-    public Guid Id { get; set; }
-
     public string? Name { get; set; }
 
     public string? Type { get; set; }
@@ -191,7 +286,7 @@ public class LargestFileDto
 
     public long SizeBytes { get; set; }
 
-    public string? SeriesName { get; set; }
+    public int FileCount { get; set; }
 }
 
 public class CategoryGroupDto

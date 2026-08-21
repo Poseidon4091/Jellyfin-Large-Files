@@ -79,17 +79,18 @@
                     '<th class="detailTableHeaderCell">Size</th>' +
                     '<th class="detailTableHeaderCell">Name</th>' +
                     '<th class="detailTableHeaderCell">Type</th>' +
+                    '<th class="detailTableHeaderCell">Files</th>' +
                     '<th class="detailTableHeaderCell">Path</th>' +
                     '</tr></thead>';
 
                 var tbody = document.createElement('tbody');
                 group.Items.forEach(function (item) {
                     var row = document.createElement('tr');
-                    var displayName = item.SeriesName ? item.SeriesName + ' - ' + item.Name : item.Name;
                     row.innerHTML =
                         '<td class="detailTableBodyCell">' + formatSize(item.SizeBytes) + '</td>' +
-                        '<td class="detailTableBodyCell">' + escapeHtml(displayName) + '</td>' +
+                        '<td class="detailTableBodyCell">' + escapeHtml(item.Name) + '</td>' +
                         '<td class="detailTableBodyCell">' + escapeHtml(item.Type) + '</td>' +
+                        '<td class="detailTableBodyCell">' + item.FileCount + '</td>' +
                         '<td class="detailTableBodyCell" style="word-break:break-all;">' + escapeHtml(item.Path) + '</td>';
                     tbody.appendChild(row);
                 });
@@ -121,13 +122,13 @@
             }
 
             function exportGroupCsv(group) {
-                var rows = [['Category', 'Name', 'SeriesName', 'Type', 'SizeBytes', 'SizeMB', 'Path']];
+                var rows = [['Category', 'Name', 'Type', 'FileCount', 'SizeBytes', 'SizeMB', 'Path']];
                 group.Items.forEach(function (item) {
                     rows.push([
                         group.Category,
                         item.Name,
-                        item.SeriesName || '',
                         item.Type,
+                        item.FileCount,
                         item.SizeBytes,
                         (item.SizeBytes / 1024 / 1024).toFixed(2),
                         item.Path

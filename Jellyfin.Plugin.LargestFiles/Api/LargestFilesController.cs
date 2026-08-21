@@ -10,6 +10,7 @@ using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.LargestFiles.Api;
 
@@ -19,10 +20,12 @@ namespace Jellyfin.Plugin.LargestFiles.Api;
 public class LargestFilesController : ControllerBase
 {
     private readonly ILibraryManager _libraryManager;
+    private readonly ILogger<LargestFilesController> _logger;
 
-    public LargestFilesController(ILibraryManager libraryManager)
+    public LargestFilesController(ILibraryManager libraryManager, ILogger<LargestFilesController> logger)
     {
         _libraryManager = libraryManager;
+        _logger = logger;
     }
 
     /// <summary>
@@ -32,12 +35,23 @@ public class LargestFilesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<LibraryDto>> GetLibraries()
     {
-        var libraries = _libraryManager.GetVirtualFolders()
-            .Select(f => new LibraryDto { Id = f.ItemId, Name = f.Name })
-            .OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        try
+        {
+            var libraries = _libraryManager.GetVirtualFolders()
+                .Where(f => !string.IsNullOrEmpty(f.ItemId))
+                .Select(f => new LibraryDto { Id = f.ItemId, Name = f.Name })
+                .OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-        return Ok(libraries);
+            _logger.LogInformation("LargestFiles: found {Count} libraries", libraries.Count);
+
+            return Ok(libraries);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LargestFiles: failed to list libraries");
+            return StatusCode(StatusCodes.Status500InternalServerError, ex.Message);
+        }
     }
 
     /// <summary>

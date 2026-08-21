@@ -25,6 +25,8 @@
                 <button is="emby-button" type="button" class="raised" id="exportAllBtn">Export All to CSV</button>
             </div>
 
+            <div id="statusMessage" style="color:#ff6161; margin-bottom:1em; display:none;"></div>
+
             <div id="groupsContainer"></div>
         </div>
     </div>
@@ -59,15 +61,33 @@
                 return params;
             }
 
+            function showStatus(page, message) {
+                var el = page.querySelector('#statusMessage');
+                if (!message) {
+                    el.style.display = 'none';
+                    el.textContent = '';
+                    return;
+                }
+                el.style.display = 'block';
+                el.textContent = message;
+            }
+
             function loadLibraries(page) {
                 return ApiClient.getJSON(ApiClient.getUrl('LargestFiles/Libraries')).then(function (libraries) {
+                    showStatus(page, null);
                     var select = page.querySelector('#libraryId');
+                    if (!libraries.length) {
+                        showStatus(page, 'No libraries were returned by the server - check Jellyfin has at least one media library configured.');
+                    }
                     libraries.forEach(function (lib) {
                         var option = document.createElement('option');
                         option.value = lib.Id;
                         option.textContent = lib.Name;
                         select.appendChild(option);
                     });
+                }).catch(function (err) {
+                    var detail = (err && err.message) ? err.message : String(err);
+                    showStatus(page, 'Failed to load libraries: ' + detail);
                 });
             }
 
@@ -181,10 +201,11 @@
 
             function load(page) {
                 var params = currentParams(page);
+                var container = page.querySelector('#groupsContainer');
+                container.textContent = 'Loading...';
                 ApiClient.getJSON(ApiClient.getUrl('LargestFiles', params))
                     .then(function (groups) {
                         page.currentGroups = groups;
-                        var container = page.querySelector('#groupsContainer');
                         container.innerHTML = '';
                         if (!groups.length) {
                             container.textContent = 'No items found.';
@@ -193,6 +214,11 @@
                         groups.forEach(function (group) {
                             container.appendChild(renderGroup(group));
                         });
+                    })
+                    .catch(function (err) {
+                        var detail = (err && err.message) ? err.message : String(err);
+                        container.textContent = '';
+                        showStatus(page, 'Failed to load data: ' + detail);
                     });
             }
 

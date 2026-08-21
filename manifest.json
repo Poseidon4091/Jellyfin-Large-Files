@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.1.1.0",
+                "changelog": "1.1.1.0: Surface a visible error message on the page if loading libraries or data fails, instead of failing silently. 1.1.0.0: Replace the min-size filter with a library picker, populated live from your Jellyfin libraries. 1.0.0.0: Initial release: largest files by library, series roll-up for TV/anime, CSV export.\n",
+                "targetAbi": "10.11.0.0",
+                "sourceUrl": "https://raw.githubusercontent.com/Poseidon4091/Jellyfin-Large-Files/main/releases/largest-files_1.1.1.0.zip",
+                "checksum": "2a485ba7ba1b3754b8faca67ec778a2f",
+                "timestamp": "2026-08-21T02:13:51Z"
+            },
+            {
                 "version": "1.1.0.0",
                 "changelog": "1.1.0.0: Replace the min-size filter with a library picker, populated live from your Jellyfin libraries. 1.0.0.0: Initial release: largest files by library, series roll-up for TV/anime, CSV export.\n",
                 "targetAbi": "10.11.0.0",

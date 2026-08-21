@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.1.0.0",
+                "changelog": "1.1.0.0: Replace the min-size filter with a library picker, populated live from your Jellyfin libraries. 1.0.0.0: Initial release: largest files by library, series roll-up for TV/anime, CSV export.\n",
+                "targetAbi": "10.11.0.0",
+                "sourceUrl": "https://raw.githubusercontent.com/Poseidon4091/Jellyfin-Large-Files/main/releases/largest-files_1.1.0.0.zip",
+                "checksum": "125a0ca1dda91b83b2d5a0115083fdca",
+                "timestamp": "2026-08-21T02:07:47Z"
+            },
+            {
                 "version": "1.0.0.0",
                 "changelog": "Initial release: largest files by library, series roll-up for TV/anime, CSV export.\n",
                 "targetAbi": "10.11.0.0",

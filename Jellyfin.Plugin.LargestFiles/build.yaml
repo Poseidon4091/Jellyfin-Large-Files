@@ -1,7 +1,7 @@
 ---
 name: "Largest Files"
 guid: "d8b2e9d4-5b1a-4c7e-9c2f-2a6f0e6a2b11"
-version: "1.0.0.0"
+version: "1.1.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Find the largest movies and TV/anime series in your library"
@@ -15,5 +15,7 @@ owner: "Poseidon4091"
 artifacts:
 - "Jellyfin.Plugin.LargestFiles.dll"
 changelog: >
-  Initial release: largest files by library, series roll-up for
-  TV/anime, CSV export.
+  1.1.0.0: Replace the min-size filter with a library picker,
+  populated live from your Jellyfin libraries.
+  1.0.0.0: Initial release: largest files by library, series roll-up
+  for TV/anime, CSV export.

@@ -12,11 +12,13 @@
 
             <div style="display:flex; gap:1em; align-items:center; margin-bottom:1em; flex-wrap:wrap;">
                 <label>
-                    Min size (MB):
-                    <input is="emby-input" type="number" id="minSizeMb" value="0" style="width:6em;" />
+                    Library:
+                    <select is="emby-select" id="libraryId" style="min-width:12em;">
+                        <option value="">All libraries</option>
+                    </select>
                 </label>
                 <label>
-                    Per-category limit:
+                    Limit:
                     <input is="emby-input" type="number" id="limit" value="100" style="width:6em;" />
                 </label>
                 <button is="emby-button" type="button" class="raised button-submit" id="refreshBtn">Refresh</button>
@@ -47,10 +49,26 @@
             }
 
             function currentParams(page) {
-                return {
-                    minSizeMb: page.querySelector('#minSizeMb').value || 0,
+                var params = {
                     perCategoryLimit: page.querySelector('#limit').value || 100
                 };
+                var libraryId = page.querySelector('#libraryId').value;
+                if (libraryId) {
+                    params.libraryId = libraryId;
+                }
+                return params;
+            }
+
+            function loadLibraries(page) {
+                return ApiClient.getJSON(ApiClient.getUrl('LargestFiles/Libraries')).then(function (libraries) {
+                    var select = page.querySelector('#libraryId');
+                    libraries.forEach(function (lib) {
+                        var option = document.createElement('option');
+                        option.value = lib.Id;
+                        option.textContent = lib.Name;
+                        select.appendChild(option);
+                    });
+                });
             }
 
             function renderGroup(group) {
@@ -108,9 +126,28 @@
                 return value;
             }
 
-            function downloadCsv(rows, filename) {
-                var csv = rows.map(function (r) { return r.map(csvEscape).join(','); }).join('\n');
-                var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            function saveBlob(blob, filename) {
+                if (window.showSaveFilePicker) {
+                    return window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{ description: 'CSV file', accept: { 'text/csv': ['.csv'] } }]
+                    }).then(function (handle) {
+                        return handle.createWritable();
+                    }).then(function (writable) {
+                        return writable.write(blob).then(function () { return writable.close(); });
+                    }).catch(function (err) {
+                        if (err && err.name === 'AbortError') {
+                            return;
+                        }
+                        downloadFallback(blob, filename);
+                    });
+                }
+
+                downloadFallback(blob, filename);
+                return Promise.resolve();
+            }
+
+            function downloadFallback(blob, filename) {
                 var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
                 a.href = url;
@@ -119,6 +156,11 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+            }
+
+            function rowsToCsvBlob(rows) {
+                var csv = rows.map(function (r) { return r.map(csvEscape).join(','); }).join('\n');
+                return new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             }
 
             function exportGroupCsv(group) {
@@ -134,7 +176,7 @@
                         item.Path
                     ]);
                 });
-                downloadCsv(rows, group.Category.replace(/[^a-z0-9]+/gi, '_') + '-largest-files.csv');
+                saveBlob(rowsToCsvBlob(rows), group.Category.replace(/[^a-z0-9]+/gi, '_') + '-largest-files.csv');
             }
 
             function load(page) {
@@ -156,7 +198,19 @@
 
             document.getElementById('LargestFilesPage').addEventListener('pageshow', function () {
                 var page = this;
-                load(page);
+
+                if (!page.librariesLoaded) {
+                    page.librariesLoaded = true;
+                    loadLibraries(page).then(function () {
+                        load(page);
+                    });
+                } else {
+                    load(page);
+                }
+
+                page.querySelector('#libraryId').addEventListener('change', function () {
+                    load(page);
+                });
 
                 page.querySelector('#refreshBtn').addEventListener('click', function () {
                     load(page);
@@ -165,12 +219,9 @@
                 page.querySelector('#exportAllBtn').addEventListener('click', function () {
                     var params = currentParams(page);
                     var url = ApiClient.getUrl('LargestFiles/Csv', params);
-                    var link = document.createElement('a');
-                    link.href = url + (url.indexOf('?') === -1 ? '?' : '&') + 'api_key=' + ApiClient.accessToken();
-                    link.download = 'largest-files.csv';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    fetch(url, { headers: { 'X-Emby-Token': ApiClient.accessToken() } })
+                        .then(function (response) { return response.blob(); })
+                        .then(function (blob) { return saveBlob(blob, 'largest-files.csv'); });
                 });
             });
         })();

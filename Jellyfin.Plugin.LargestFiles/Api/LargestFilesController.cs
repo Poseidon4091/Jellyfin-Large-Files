@@ -26,18 +26,33 @@ public class LargestFilesController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the Jellyfin libraries (Movies, TV Shows, Anime, etc) available to filter by.
+    /// </summary>
+    [HttpGet("Libraries")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<IEnumerable<LibraryDto>> GetLibraries()
+    {
+        var libraries = _libraryManager.GetVirtualFolders()
+            .Select(f => new LibraryDto { Id = f.ItemId, Name = f.Name })
+            .OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Ok(libraries);
+    }
+
+    /// <summary>
     /// Returns the largest items, grouped by library (Movies, TV Shows, Anime, etc).
     /// Movies are listed individually; TV/anime episodes are rolled up per series.
     /// </summary>
     /// <param name="perCategoryLimit">Max items to return per library category.</param>
-    /// <param name="minSizeMb">Only include items at or above this size, in MB.</param>
+    /// <param name="libraryId">Only include items from this library (Jellyfin collection folder id).</param>
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<CategoryGroupDto>> Get(
         [FromQuery] int perCategoryLimit = 100,
-        [FromQuery] double minSizeMb = 0)
+        [FromQuery] Guid? libraryId = null)
     {
-        var grouped = BuildGroups(perCategoryLimit, minSizeMb);
+        var grouped = BuildGroups(perCategoryLimit, libraryId);
         return Ok(grouped);
     }
 
@@ -45,14 +60,14 @@ public class LargestFilesController : ControllerBase
     /// Same data as <see cref="Get"/> but returned as a downloadable CSV file.
     /// </summary>
     /// <param name="perCategoryLimit">Max items to return per library category.</param>
-    /// <param name="minSizeMb">Only include items at or above this size, in MB.</param>
+    /// <param name="libraryId">Only include items from this library (Jellyfin collection folder id).</param>
     [HttpGet("Csv")]
     [Produces("text/csv")]
     public IActionResult GetCsv(
         [FromQuery] int perCategoryLimit = 100,
-        [FromQuery] double minSizeMb = 0)
+        [FromQuery] Guid? libraryId = null)
     {
-        var grouped = BuildGroups(perCategoryLimit, minSizeMb);
+        var grouped = BuildGroups(perCategoryLimit, libraryId);
 
         var sb = new StringBuilder();
         sb.AppendLine("Category,Name,Type,FileCount,SizeBytes,SizeMB,Path");
@@ -79,15 +94,19 @@ public class LargestFilesController : ControllerBase
         return File(bytes, "text/csv", fileName);
     }
 
-    private List<CategoryGroupDto> BuildGroups(int perCategoryLimit, double minSizeMb)
+    private List<CategoryGroupDto> BuildGroups(int perCategoryLimit, Guid? libraryId)
     {
         var query = new InternalItemsQuery
         {
             Recursive = true
         };
 
+        if (libraryId.HasValue && libraryId.Value != Guid.Empty)
+        {
+            query.AncestorIds = new[] { libraryId.Value };
+        }
+
         var items = _libraryManager.GetItemList(query);
-        var minBytes = (long)(minSizeMb * 1024 * 1024);
         var take = perCategoryLimit <= 0 ? 100 : perCategoryLimit;
 
         // Non-episode items (movies, standalone videos, etc) are listed individually.
@@ -150,11 +169,6 @@ public class LargestFilesController : ControllerBase
 
         foreach (var acc in seriesTotals.Values)
         {
-            if (acc.SizeBytes < minBytes)
-            {
-                continue;
-            }
-
             if (!byCategory.TryGetValue(acc.Category, out var list))
             {
                 list = new List<LargestFileDto>();
@@ -176,7 +190,6 @@ public class LargestFilesController : ControllerBase
             {
                 Category = kvp.Key,
                 Items = kvp.Value
-                    .Where(i => i.SizeBytes >= minBytes)
                     .OrderByDescending(i => i.SizeBytes)
                     .Take(take)
                     .ToList()
@@ -294,4 +307,11 @@ public class CategoryGroupDto
     public string Category { get; set; } = string.Empty;
 
     public List<LargestFileDto> Items { get; set; } = new();
+}
+
+public class LibraryDto
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
 }
